@@ -1,7 +1,3 @@
-// --------------
-// Types
-// --------------
-
 import { hashPassword, hashToken, verifyPassword } from "@/lib/hash";
 import {
   signAccessToken,
@@ -9,6 +5,10 @@ import {
   verifyRefreshToken,
 } from "@/lib/jwt";
 import prisma from "@/lib/prisma";
+
+// --------------
+// Types
+// --------------
 
 interface RegisterUserInputProps {
   username: string;
