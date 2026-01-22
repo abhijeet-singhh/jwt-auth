@@ -5,6 +5,7 @@ import {
   verifyRefreshToken,
 } from "@/lib/jwt";
 import prisma from "@/lib/prisma";
+import { PrismaClientKnownRequestError } from "@prisma/client/runtime/client";
 
 // --------------
 // Types
@@ -32,10 +33,12 @@ interface AuthTokens {
 
 export async function registerUser(input: RegisterUserInputProps) {
   const { username, email, password } = input;
+  const normalizedEmail = email.trim().toLowerCase();
 
   // Check if user already exists
+  // redundant check, can be removed to reduce latency (already handled below - P2002)
   const existingUser = await prisma.user.findUnique({
-    where: { email },
+    where: { email: normalizedEmail },
   });
 
   if (existingUser) {
@@ -45,22 +48,29 @@ export async function registerUser(input: RegisterUserInputProps) {
   // Hash password
   const hashedPassword = await hashPassword(password);
 
-  // Create User
-  const user = await prisma.user.create({
-    data: {
-      username,
-      email,
-      passwordHash: hashedPassword,
-    },
-    select: {
-      id: true,
-      username: true,
-      email: true,
-      createdAt: true,
-    },
-  });
-
-  return user;
+  try {
+    // Create User
+    return await prisma.user.create({
+      data: {
+        username,
+        email: normalizedEmail,
+        passwordHash: hashedPassword,
+      },
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        createdAt: true,
+      },
+    });
+  } catch (error) {
+    // Catch Prisma unique constraint errors for concurrency safety
+    if (error instanceof PrismaClientKnownRequestError) {
+      if (error.code === "P2002")
+        throw new Error("User with this email already exists");
+    }
+  }
+  throw new Error("Failed to register user");
 }
 
 // --------------
@@ -95,12 +105,17 @@ export async function loginUser(
 
   // Store hashed refresh token
   const hashedRefreshToken = hashToken(refreshToken);
-  await prisma.refreshToken.create({
-    data: {
-      tokenHash: hashedRefreshToken,
-      userId: user.id,
-      expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 7),
-    },
+
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+  await prisma.$transaction(async (tx) => {
+    await tx.refreshToken.create({
+      data: {
+        tokenHash: hashedRefreshToken,
+        userId: user.id,
+        expiresAt,
+      },
+    });
   });
 
   return {
@@ -146,11 +161,13 @@ export async function refreshSession(
   // Store new refresh token
   const newHashedToken = hashToken(newRefreshToken);
 
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
   await prisma.refreshToken.create({
     data: {
       tokenHash: newHashedToken,
       userId: payload.userId,
-      expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 7),
+      expiresAt,
     },
   });
 
