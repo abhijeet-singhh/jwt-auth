@@ -1,13 +1,12 @@
 import { clearAuthCookies } from "@/lib/cookies";
 import { logoutUser } from "@/services/auth.service";
-import { ResponseCookies } from "next/dist/compiled/@edge-runtime/cookies";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
 export async function POST() {
   try {
     // read refresh token from cookies
-    const cookieStore = cookies() as unknown as ResponseCookies;
+    const cookieStore = await cookies();
     const refreshToken = cookieStore.get("refresh_token")?.value;
 
     // revoke refresh token in db if exists
@@ -16,7 +15,7 @@ export async function POST() {
     }
 
     // clear cookies
-    clearAuthCookies();
+    await clearAuthCookies();
 
     // return response
     return NextResponse.json(
@@ -29,11 +28,11 @@ export async function POST() {
     console.error("LOGOUT ERROR:", error);
 
     // even on error clear cookies to force logout
-    clearAuthCookies();
+    await clearAuthCookies();
 
     return NextResponse.json(
       {
-        message: "Logged out",
+        message: "Logged out successfully",
       },
       { status: 200 },
     );

@@ -11,12 +11,12 @@ export async function POST(req: NextRequest) {
     // validate input
     const parsed = loginSchema.safeParse(body);
     if (!parsed.success) {
-      return (
-        NextResponse.json({
+      return NextResponse.json(
+        {
           message: "Invalid input",
           errors: parsed.error.flatten().fieldErrors,
-        }),
-        { status: 400 }
+        },
+        { status: 400 },
       );
     }
 
@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
     });
 
     // set cookies
-    setAuthCookies({
+    await setAuthCookies({
       accessToken,
       refreshToken,
     });

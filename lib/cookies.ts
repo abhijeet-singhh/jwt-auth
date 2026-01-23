@@ -1,4 +1,3 @@
-import { ResponseCookies } from "next/dist/compiled/@edge-runtime/cookies";
 import { cookies } from "next/headers";
 
 interface SetAuthCookiesProps {
@@ -8,11 +7,11 @@ interface SetAuthCookiesProps {
 
 const isProduction = process.env.NODE_ENV === "production";
 
-export function setAuthCookies({
+export async function setAuthCookies({
   accessToken,
   refreshToken,
 }: SetAuthCookiesProps) {
-  const cookieStore = cookies() as unknown as ResponseCookies;
+  const cookieStore = await cookies();
 
   cookieStore.set("access_token", accessToken, {
     httpOnly: true,
@@ -31,8 +30,8 @@ export function setAuthCookies({
   });
 }
 
-export function clearAuthCookies() {
-  const cookieStore = cookies() as unknown as ResponseCookies;
+export async function clearAuthCookies() {
+  const cookieStore = await cookies();
 
   cookieStore.set("access_token", "", {
     httpOnly: true,
