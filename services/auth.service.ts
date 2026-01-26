@@ -1,3 +1,4 @@
+import { sendVerificationEmail } from "@/lib/email";
 import { hashPassword, hashToken, verifyPassword } from "@/lib/hash";
 import {
   signAccessToken,
@@ -6,6 +7,7 @@ import {
 } from "@/lib/jwt";
 import prisma from "@/lib/prisma";
 import { PrismaClientKnownRequestError } from "@prisma/client/runtime/client";
+import crypto from "crypto";
 
 // --------------
 // Types
@@ -50,7 +52,7 @@ export async function registerUser(input: RegisterUserInputProps) {
 
   try {
     // Create User
-    return await prisma.user.create({
+    const user = await prisma.user.create({
       data: {
         username,
         email: normalizedEmail,
@@ -63,6 +65,14 @@ export async function registerUser(input: RegisterUserInputProps) {
         createdAt: true,
       },
     });
+
+    // create verification email
+    const verificationToken = await createEmailVerificationToken(user.id);
+
+    // send verification email
+    await sendVerificationEmail(user.email, verificationToken);
+
+    return user;
   } catch (error) {
     // Catch Prisma unique constraint errors for concurrency safety
     if (error instanceof PrismaClientKnownRequestError) {
@@ -87,12 +97,14 @@ export async function loginUser(
     where: { email },
   });
 
-  if (!user) throw new Error("Invalid email or password");
+  if (!user) throw new Error("INVALID_CREDENTIALS");
+
+  if (!user.isEmailVerified) throw new Error("EMAIL_NOT_VERIFIED");
 
   // Compare password
   const isPasswordValid = await verifyPassword(password, user.passwordHash);
 
-  if (!isPasswordValid) throw new Error("Invalid email or password");
+  if (!isPasswordValid) throw new Error("INVALID_CREDENTIALS");
 
   // Issue tokens
   const accessToken = signAccessToken({
@@ -187,4 +199,48 @@ export async function logoutUser(refreshToken: string): Promise<void> {
   await prisma.refreshToken.deleteMany({
     where: { tokenHash: hashedToken },
   });
+}
+
+// --------------------
+// Email Verification
+// --------------------
+
+export async function createEmailVerificationToken(userId: string) {
+  const rawToken = crypto.randomBytes(32).toString("hex");
+  const tokenHash = hashToken(rawToken);
+
+  const expiresAt = new Date(Date.now() + 1000 * 60 * 30); // 30 minutes
+
+  await prisma.emailVerificationToken.create({
+    data: {
+      tokenHash,
+      userId,
+      expiresAt,
+    },
+  });
+
+  return rawToken;
+}
+
+export async function verifyEmailToken(token: string) {
+  const tokenHash = hashToken(token);
+
+  const record = await prisma.emailVerificationToken.findUnique({
+    where: { tokenHash },
+  });
+
+  if (!record) throw new Error("Invalid verification token");
+  if (record.expiresAt < new Date())
+    throw new Error("Verification token expired");
+
+  await prisma.$transaction([
+    prisma.user.update({
+      where: { id: record.userId },
+      data: { isEmailVerified: true },
+    }),
+
+    prisma.emailVerificationToken.delete({
+      where: { tokenHash },
+    }),
+  ]);
 }

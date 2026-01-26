@@ -41,12 +41,21 @@ export async function POST(req: NextRequest) {
       { status: 200 },
     );
   } catch (error: any) {
-    if (error.message === "Invalid email or password") {
+    if (error.message === "INVALID_CREDENTIALS") {
       return NextResponse.json(
         {
           message: error.message,
         },
         { status: 401 },
+      );
+    }
+
+    if (error.message === "EMAIL_NOT_VERIFIED") {
+      return NextResponse.json(
+        {
+          message: "Please verify your email",
+        },
+        { status: 403 },
       );
     }
     console.error("LOGIN ERROR:", error);
