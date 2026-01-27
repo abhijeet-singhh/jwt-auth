@@ -244,3 +244,64 @@ export async function verifyEmailToken(token: string) {
     }),
   ]);
 }
+
+// --------------------
+// Email Verification
+// --------------------
+
+export async function createPasswordResetToken(email: string) {
+  const user = await prisma.user.findUnique({
+    where: { email },
+  });
+
+  if (!user) return;
+
+  const rawToken = crypto.randomBytes(32).toString("hex");
+  const tokenHash = hashToken(rawToken);
+
+  const expiresAt = new Date(Date.now() + 1000 * 60 * 15); // 15 min
+
+  await prisma.passwordResetToken.create({
+    data: {
+      tokenHash,
+      userId: user.id,
+      expiresAt,
+    },
+  });
+
+  return {
+    email: user.email,
+    token: rawToken,
+  };
+}
+
+export async function resetPassword(token: string, newPassword: string) {
+  const tokenHash = hashToken(token);
+
+  const record = await prisma.passwordResetToken.findUnique({
+    where: { tokenHash },
+  });
+
+  if (!record) throw new Error("Invalid reset token");
+  if (record.expiresAt < new Date()) throw new Error("Reset token expired");
+
+  const hashedPassword = await hashPassword(newPassword);
+
+  await prisma.$transaction([
+    // Update password
+    prisma.user.update({
+      where: { id: record.userId },
+      data: { passwordHash: hashedPassword },
+    }),
+
+    // Delete reset token
+    prisma.passwordResetToken.delete({
+      where: { tokenHash },
+    }),
+
+    // Revoke ALL refresh tokens (force logout everywhere)
+    prisma.refreshToken.deleteMany({
+      where: { userId: record.userId },
+    }),
+  ]);
+}
